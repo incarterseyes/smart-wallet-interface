@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Wallet Interface</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <script src="https://unpkg.com/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
+    <script src="https://unpkg.com/web3modal@1.9.12/dist/index.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 p-4">
+    <div class="max-w-lg mx-auto bg-white rounded-lg shadow p-6">
+        <h1 class="text-2xl font-bold mb-4">Smart Wallet Interface</h1>
+        
+        <!-- Network Selection -->
+        <div class="mb-4">
+            <label class="block text-sm font-medium mb-2">Network</label>
+            <select id="network" class="w-full p-2 border rounded">
+                <option value="BASE">Base</option>
+                <option value="ZORA">Zora</option>
+            </select>
+        </div>
+
+        <!-- Connect Wallet -->
+        <button id="connectBtn" class="w-full bg-blue-500 text-white p-2 rounded mb-4 hover:bg-blue-600">
+            Connect Wallet
+        </button>
+        <div id="accountDisplay" class="text-sm text-gray-600 mb-4 hidden"></div>
+
+        <!-- Smart Wallet Address -->
+        <div class="mb-4">
+            <label class="block text-sm font-medium mb-2">Smart Wallet Address</label>
+            <input id="walletAddress" type="text" class="w-full p-2 border rounded" placeholder="Enter smart wallet address">
+        </div>
+
+        <!-- Transfer Type Tabs -->
+        <div class="mb-4">
+            <div class="border-b">
+                <div class="flex">
+                    <button class="px-4 py-2 border-b-2 border-blue-500" onclick="showTab('eth')">ETH</button>
+                    <button class="px-4 py-2" onclick="showTab('erc20')">ERC20</button>
+                    <button class="px-4 py-2" onclick="showTab('erc1155')">ERC1155</button>
+                </div>
+            </div>
+
+            <!-- ETH Transfer -->
+            <div id="ethTab" class="py-4">
+                <input id="ethRecipient" type="text" class="w-full p-2 border rounded mb-2" placeholder="Recipient Address">
+                <input id="ethAmount" type="number" step="0.000000000000000001" class="w-full p-2 border rounded mb-2" placeholder="Amount (ETH)">
+                <button onclick="transferETH()" class="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600">
+                    Send ETH
+                </button>
+            </div>
+
+            <!-- ERC20 Transfer -->
+            <div id="erc20Tab" class="py-4 hidden">
+                <input id="tokenAddress" type="text" class="w-full p-2 border rounded mb-2" placeholder="Token Contract Address">
+                <input id="tokenRecipient" type="text" class="w-full p-2 border rounded mb-2" placeholder="Recipient Address">
+                <input id="tokenAmount" type="number" step="0.000000000000000001" class="w-full p-2 border rounded mb-2" placeholder="Amount">
+                <button onclick="transferERC20()" class="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600">
+                    Send Tokens
+                </button>
+            </div>
+
+            <!-- ERC1155 Transfer -->
+            <div id="erc1155Tab" class="py-4 hidden">
+                <input id="nftAddress" type="text" class="w-full p-2 border rounded mb-2" placeholder="NFT Contract Address">
+                <input id="nftId" type="number" class="w-full p-2 border rounded mb-2" placeholder="Token ID">
+                <input id="nftAmount" type="number" class="w-full p-2 border rounded mb-2" placeholder="Amount">
+                <input id="nftRecipient" type="text" class="w-full p-2 border rounded mb-2" placeholder="Recipient Address">
+                <button onclick="transferERC1155()" class="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600">
+                    Send NFTs
+                </button>
+            </div>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="status" class="text-sm hidden"></div>
+    </div>
+
+    <script>
+        let provider;
+        let currentAccount;
+        let web3Modal;
+
+        const NETWORKS = {
+            BASE: {
+                chainId: '0x2105',
+                chainName: 'Base',
+                rpcUrls: ['https://mainnet.base.org'],
+                blockExplorerUrls: ['https://basescan.org'],
+                nativeCurrency: {
+                    name: 'ETH',
+                    symbol: 'ETH',
+                    decimals: 18
+                }
+            },
+            ZORA: {
+                chainId: '0x76adf1',
+                chainName: 'Zora',
+                rpcUrls: ['https://rpc.zora.energy'],
+                blockExplorerUrls: ['https://explorer.zora.energy'],
+                nativeCurrency: {
+                    name: 'ETH',
+                    symbol: 'ETH',
+                    decimals: 18
+                }
+            }
+        };
+
+        // Initialize Web3Modal
+        function init() {
+            const providerOptions = {
+                walletconnect: {
+                    package: WalletConnectProvider.default,
+                    options: {
+                        rpc: {
+                            8453: 'https://mainnet.base.org',      // Base
+                            7777777: 'https://rpc.zora.energy'    // Zora
+                        }
+                    }
+                }
+            };
+
+            web3Modal = new Web3Modal.default({
+                cacheProvider: true,
+                providerOptions,
+                theme: "light",
+            });
+
+            console.log("Web3Modal initialized:", web3Modal);
+        }
+
+        function showStatus(message, isError = false) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `text-sm p-2 rounded mt-2 ${isError ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`;
+            status.classList.remove('hidden');
+        }
+
+        function showTab(tabName) {
+            document.getElementById('ethTab').classList.add('hidden');
+            document.getElementById('erc20Tab').classList.add('hidden');
+            document.getElementById('erc1155Tab').classList.add('hidden');
+            document.getElementById(`${tabName}Tab`).classList.remove('hidden');
+        }
+
+        async function connectWallet() {
+            try {
+                if (!web3Modal) {
+                    console.error("Web3Modal not initialized");
+                    showStatus("Initializing Web3Modal...");
+                    init();
+                }
+                
+                const instance = await web3Modal.connect();
+                provider = new ethers.providers.Web3Provider(instance);
+                const accounts = await provider.listAccounts();
+                currentAccount = accounts[0];
+
+                document.getElementById('accountDisplay').textContent = 
+                    `Connected: ${currentAccount.slice(0, 6)}...${currentAccount.slice(-4)}`;
+                document.getElementById('accountDisplay').classList.remove('hidden');
+                document.getElementById('connectBtn').textContent = 'Connected';
+
+                // Handle provider events
+                instance.on("accountsChanged", (accounts) => {
+                    currentAccount = accounts[0];
+                    document.getElementById('accountDisplay').textContent = 
+                        `Connected: ${currentAccount.slice(0, 6)}...${currentAccount.slice(-4)}`;
+                });
+
+                instance.on("disconnect", () => {
+                    document.getElementById('accountDisplay').classList.add('hidden');
+                    document.getElementById('connectBtn').textContent = 'Connect Wallet';
+                    currentAccount = null;
+                });
+
+                await switchNetwork();
+
+            } catch (error) {
+                console.error("Connection error:", error);
+                showStatus(error.message, true);
+            }
+        }
+
+        async function switchNetwork() {
+            try {
+                const networkSelect = document.getElementById('network');
+                const network = NETWORKS[networkSelect.value];
+                
+                const chainId = await provider.send('eth_chainId', []);
+                if (chainId !== network.chainId) {
+                    try {
+                        await provider.send('wallet_switchEthereumChain', [{ 
+                            chainId: network.chainId 
+                        }]);
+                    } catch (switchError) {
+                        if (switchError.code === 4902) {
+                            await provider.send('wallet_addEthereumChain', [network]);
+                        } else {
+                            throw switchError;
+                        }
+                    }
+                }
+            } catch (error) {
+                showStatus(`Failed to switch network: ${error.message}`, true);
+            }
+        }
+
+        async function transferETH() {
+            try {
+                const walletAddress = document.getElementById('walletAddress').value;
+                const recipient = document.getElementById('ethRecipient').value;
+                const amount = document.getElementById('ethAmount').value;
+
+                if (!walletAddress || !recipient || !amount) {
+                    throw new Error('Please fill in all fields');
+                }
+
+                const signer = provider.getSigner();
+                const wallet = new ethers.Contract(walletAddress, [
+                    "function execute(address target, uint256 value, bytes calldata data) external",
+                    "function isAdmin(address account) external view returns (bool)"
+                ], signer);
+
+                const value = ethers.utils.parseEther(amount);
+                const tx = await wallet.execute(recipient, value, '0x');
+                await tx.wait();
+                showStatus('ETH transfer successful!');
+            } catch (error) {
+                showStatus(error.message, true);
+            }
+        }
+
+        async function transferERC20() {
+            try {
+                const walletAddress = document.getElementById('walletAddress').value;
+                const tokenAddress = document.getElementById('tokenAddress').value;
+                const recipient = document.getElementById('tokenRecipient').value;
+                const amount = document.getElementById('tokenAmount').value;
+
+                if (!walletAddress || !tokenAddress || !recipient || !amount) {
+                    throw new Error('Please fill in all fields');
+                }
+
+                const signer = provider.getSigner();
+                const wallet = new ethers.Contract(walletAddress, [
+                    "function execute(address target, uint256 value, bytes calldata data) external"
+                ], signer);
+
+                const erc20Interface = new ethers.utils.Interface([
+                    "function transfer(address to, uint256 amount) external"
+                ]);
+
+                const data = erc20Interface.encodeFunctionData("transfer", [
+                    recipient,
+                    ethers.utils.parseUnits(amount, 18)
+                ]);
+
+                const tx = await wallet.execute(tokenAddress, 0, data);
+                await tx.wait();
+                showStatus('Token transfer successful!');
+            } catch (error) {
+                showStatus(error.message, true);
+            }
+        }
+
+        async function transferERC1155() {
+            try {
+                const walletAddress = document.getElementById('walletAddress').value;
+                const nftAddress = document.getElementById('nftAddress').value;
+                const recipient = document.getElementById('nftRecipient').value;
+                const tokenId = document.getElementById('nftId').value;
+                const amount = document.getElementById('nftAmount').value;
+
+                if (!walletAddress || !nftAddress || !recipient || !tokenId || !amount) {
+                    throw new Error('Please fill in all fields');
+                }
+
+                const signer = provider.getSigner();
+                const wallet = new ethers.Contract(walletAddress, [
+                    "function execute(address target, uint256 value, bytes calldata data) external"
+                ], signer);
+
+                const erc1155Interface = new ethers.utils.Interface([
+                    "function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes calldata data) external"
+                ]);
+
+                const data = erc1155Interface.encodeFunctionData("safeTransferFrom", [
+                    walletAddress,
+                    recipient,
+                    tokenId,
+                    amount,
+                    '0x'
+                ]);
+
+                const tx = await wallet.execute(nftAddress, 0, data);
+                await tx.wait();
+                showStatus('NFT transfer successful!');
+            } catch (error) {
+                showStatus(error.message, true);
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Document loaded, initializing...");
+            init();
+            document.getElementById('connectBtn').addEventListener('click', connectWallet);
+            document.getElementById('network').addEventListener('change', switchNetwork);
+        });
+    </script>
+</body>
+</html>
